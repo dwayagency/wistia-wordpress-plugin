@@ -590,12 +590,20 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
     if (!empty($main_video) && isset($main_video['hashed_id'])) {
         $main_hashed_id = esc_attr($main_video['hashed_id']);
         $main_name = isset($main_video['name']) ? esc_html($main_video['name']) : 'Video principale';
-        $main_description = isset($main_video['description']) ? esc_html($main_video['description']) : '';
+        // Prova diversi campi per la descrizione
+        $main_description = '';
+        if (isset($main_video['description']) && !empty($main_video['description'])) {
+            $main_description = esc_html($main_video['description']);
+        } elseif (isset($main_video['caption']) && !empty($main_video['caption'])) {
+            $main_description = esc_html($main_video['caption']);
+        } elseif (isset($main_video['seoDescription']) && !empty($main_video['seoDescription'])) {
+            $main_description = esc_html($main_video['seoDescription']);
+        }
         
         $html .= '<div class="wpg-main-video">';
         $html .= '<div class="wpg-main-video-wrapper">';
         $html .= '<iframe 
-            src="https://fast.wistia.net/embed/iframe/' . $main_hashed_id . '?videoFoam=true" 
+            src="https://fast.wistia.net/embed/iframe/' . $main_hashed_id . '?videoFoam=true&playerColor=dc3545&controlsColor=dc3545" 
             allow="autoplay; fullscreen" 
             allowfullscreen 
             frameborder="0"
@@ -606,6 +614,7 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
         if (!empty($main_name)) {
             $html .= '<h3 class="wpg-main-video-title">' . $main_name . '</h3>';
         }
+        // Mostra sempre la descrizione se presente
         if (!empty($main_description)) {
             $html .= '<p class="wpg-main-video-description">' . $main_description . '</p>';
         }
@@ -614,7 +623,7 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
         $share_url = add_query_arg('video', $main_hashed_id, get_permalink());
         $html .= '<div class="wpg-share-button-wrapper">';
         $html .= '<button type="button" class="wpg-share-button" data-video-id="' . $main_hashed_id . '" data-share-url="' . esc_url($share_url) . '">';
-        $html .= '<span class="wpg-share-icon">🔗</span> Condividi puntata';
+        $html .= 'Condividi puntata';
         $html .= '</button>';
         $html .= '<span class="wpg-share-message" style="display:none;">Link copiato!</span>';
         $html .= '</div>';
@@ -633,12 +642,20 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
 
             $hashed_id = esc_attr($media['hashed_id']);
             $name = isset($media['name']) ? esc_html($media['name']) : 'Video senza titolo';
-            $description = isset($media['description']) ? esc_html($media['description']) : '';
+            // Prova diversi campi per la descrizione
+            $description = '';
+            if (isset($media['description']) && !empty($media['description'])) {
+                $description = esc_html($media['description']);
+            } elseif (isset($media['caption']) && !empty($media['caption'])) {
+                $description = esc_html($media['caption']);
+            } elseif (isset($media['seoDescription']) && !empty($media['seoDescription'])) {
+                $description = esc_html($media['seoDescription']);
+            }
 
             $html .= '<div class="wpg-item">';
             $html .= '<div class="wpg-video-wrapper">';
             $html .= '<iframe 
-                src="https://fast.wistia.net/embed/iframe/' . $hashed_id . '?videoFoam=true" 
+                src="https://fast.wistia.net/embed/iframe/' . $hashed_id . '?videoFoam=true&playerColor=dc3545&controlsColor=dc3545" 
                 allow="autoplay; fullscreen" 
                 allowfullscreen 
                 frameborder="0"
@@ -649,6 +666,7 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
             if (!empty($name)) {
                 $html .= '<h4 class="wpg-video-title">' . $name . '</h4>';
             }
+            // Mostra sempre la descrizione se presente
             if (!empty($description)) {
                 $html .= '<p class="wpg-video-description">' . $description . '</p>';
             }
@@ -657,7 +675,7 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
             $share_url = add_query_arg('video', $hashed_id, get_permalink());
             $html .= '<div class="wpg-share-button-wrapper">';
             $html .= '<button type="button" class="wpg-share-button wpg-share-button-small" data-video-id="' . $hashed_id . '" data-share-url="' . esc_url($share_url) . '">';
-            $html .= '<span class="wpg-share-icon">🔗</span> Condividi puntata';
+            $html .= 'Condividi puntata';
             $html .= '</button>';
             $html .= '<span class="wpg-share-message" style="display:none;">Link copiato!</span>';
             $html .= '</div>';
