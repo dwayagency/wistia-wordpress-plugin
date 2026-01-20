@@ -45,6 +45,11 @@ add_action('admin_init', function () {
         'sanitize_callback' => 'sanitize_text_field',
         'default' => ''
     ]);
+    register_setting('wpg_settings', 'wpg_api_token', [
+        'type' => 'string',
+        'sanitize_callback' => 'sanitize_text_field',
+        'default' => ''
+    ]);
 });
 
 // === MAIN PAGE WITH TABS ===
@@ -98,7 +103,24 @@ function wpg_settings_tab() {
                     <p class="description">
                         Inserisci il Channel ID Wistia predefinito (es: bkfd9ulu5l dall'URL https://fast.wistia.com/embed/channel/bkfd9ulu5l). 
                         Questo verrà usato se non specifichi un channel_id nello shortcode.
-                        <br><strong>Nota:</strong> I channel funzionano con qualsiasi account Wistia, non serve API token.
+                    </p>
+                </td>
+            </tr>
+            <tr>
+                <th scope="row"><label for="wpg_api_token">Wistia API Token</label></th>
+                <td>
+                    <input 
+                        type="text" 
+                        id="wpg_api_token"
+                        name="wpg_api_token" 
+                        value="<?php echo esc_attr(get_option('wpg_api_token')); ?>" 
+                        size="50"
+                        class="regular-text"
+                    >
+                    <p class="description">
+                        <strong>Richiesto per i channel:</strong> Inserisci il tuo API token di Wistia per ottenere automaticamente i video dai channel e creare la gallery. 
+                        Puoi trovarlo nelle impostazioni del tuo account Wistia.
+                        <br><strong>Nota:</strong> L'API token può accedere solo ai channel del tuo account. Per channel di altri account, usa video_ids manualmente.
                     </p>
                 </td>
             </tr>
@@ -123,10 +145,11 @@ function wpg_generator_tab() {
         <h2>Genera Shortcode per Channel Wistia</h2>
         
         <div style="margin: 20px 0;">
-            <h3>Opzione 1: Usa un Channel Wistia (non richiede API Token)</h3>
+            <h3>Opzione 1: Usa un Channel Wistia (richiede API Token)</h3>
             <p class="description" style="margin-bottom: 15px;">
-                <strong>Funziona con channel di qualsiasi account Wistia!</strong> 
-                Non richiede API token. Inserisci il Channel ID (es: bkfd9ulu5l dall'URL https://fast.wistia.com/embed/channel/bkfd9ulu5l).
+                <strong>Nota:</strong> Per creare una gallery dai video del channel, serve l'API Token. 
+                Il plugin recupererà automaticamente tutti i video del channel e creerà una gallery che si aggiorna automaticamente.
+                <br>Inserisci il Channel ID (es: bkfd9ulu5l dall'URL https://fast.wistia.com/embed/channel/bkfd9ulu5l).
             </p>
             
             <?php
@@ -289,6 +312,13 @@ add_action('wp_enqueue_scripts', function () {
         'wpg-style',
         plugin_dir_url(__FILE__) . 'assets/style.css'
     );
+    wp_enqueue_script(
+        'wpg-script',
+        plugin_dir_url(__FILE__) . 'assets/wpg-script.js',
+        [],
+        '1.0',
+        true
+    );
 });
 
 // === SHORTCODE ===
@@ -300,24 +330,96 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
 
     $medias = [];
 
-    // Opzione 1: Usa channel_id (non richiede API token, funziona con qualsiasi account)
+    // Opzione 1: Usa channel_id
     if (!empty($atts['channel_id'])) {
         $channel_id = sanitize_text_field($atts['channel_id']);
+        $token = get_option('wpg_api_token');
         
-        // Embed diretto del channel Wistia
-        $html = '<div class="wpg-channel-wrapper">';
-        $html .= '<iframe 
-            src="https://fast.wistia.com/embed/channel/' . esc_attr($channel_id) . '" 
-            allow="autoplay; fullscreen" 
-            allowfullscreen 
-            frameborder="0"
-            loading="lazy"
-            class="wpg-channel-iframe"
-            title="Wistia Channel">
-        </iframe>';
-        $html .= '</div>';
+        // Prova prima con l'API se abbiamo il token
+        if (!empty($token)) {
+            // Secondo la documentazione Wistia, usa /medias.json con filtro channel_id
+            // Supporta anche paging: per_page (max 100) e page
+            $api_url = esc_url_raw("https://api.wistia.com/v1/medias.json?channel_id={$channel_id}&per_page=100&page=1");
+            
+            $response = wp_remote_get(
+                $api_url,
+                [
+                    'headers' => [
+                        'Authorization' => 'Bearer ' . sanitize_text_field($token)
+                    ],
+                    'timeout' => 15
+                ]
+            );
+            
+            if (!is_wp_error($response)) {
+                $response_code = wp_remote_retrieve_response_code($response);
+                
+                if ($response_code === 200) {
+                    $body = wp_remote_retrieve_body($response);
+                    $medias_data = json_decode($body, true);
+                    
+                    // La risposta dovrebbe essere un array di media
+                    if (is_array($medias_data) && !empty($medias_data)) {
+                        $medias = $medias_data;
+                        
+                        // Se ci sono più di 100 video, recupera anche le pagine successive
+                        if (count($medias_data) === 100) {
+                            $page = 2;
+                            while (true) {
+                                $next_url = esc_url_raw("https://api.wistia.com/v1/medias.json?channel_id={$channel_id}&per_page=100&page={$page}");
+                                $next_response = wp_remote_get(
+                                    $next_url,
+                                    [
+                                        'headers' => [
+                                            'Authorization' => 'Bearer ' . sanitize_text_field($token)
+                                        ],
+                                        'timeout' => 15
+                                    ]
+                                );
+                                
+                                if (is_wp_error($next_response) || wp_remote_retrieve_response_code($next_response) !== 200) {
+                                    break;
+                                }
+                                
+                                $next_body = wp_remote_retrieve_body($next_response);
+                                $next_medias = json_decode($next_body, true);
+                                
+                                if (is_array($next_medias) && !empty($next_medias)) {
+                                    $medias = array_merge($medias, $next_medias);
+                                    if (count($next_medias) < 100) {
+                                        break; // Ultima pagina
+                                    }
+                                    $page++;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } elseif ($response_code === 403) {
+                    // Accesso negato
+                    if (current_user_can('manage_options')) {
+                        return '<p class="wpg-error">Accesso negato al channel. Verifica che il channel sia "Unlocked" nelle impostazioni Wistia e che l\'API token abbia i permessi necessari.</p>';
+                    }
+                    return '';
+                } elseif ($response_code === 404) {
+                    // Channel non trovato
+                    if (current_user_can('manage_options')) {
+                        return '<p class="wpg-error">Channel non trovato. Verifica che il Channel ID sia corretto e che il channel appartenga al tuo account Wistia.</p>';
+                    }
+                    return '';
+                }
+            }
+        }
         
-        return $html;
+        // Se non abbiamo ottenuto i video tramite API, usa JavaScript per estrarli dal channel embed
+        if (empty($medias)) {
+            // Usa JavaScript per estrarre i video dal channel (funziona anche senza API token)
+            $html = '<div class="wpg-channel-container" data-wpg-channel-id="' . esc_attr($channel_id) . '">';
+            $html .= '<div class="wpg-loading">Caricamento video dal channel...</div>';
+            $html .= '</div>';
+            return $html;
+        }
     }
     // Opzione 2: Usa video_ids manuali (non richiede API token)
     elseif (!empty($atts['video_ids'])) {
@@ -340,28 +442,53 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
         $default_channel_id = get_option('wpg_channel_id');
         if (!empty($default_channel_id)) {
             $channel_id = sanitize_text_field($default_channel_id);
+            $token = get_option('wpg_api_token');
             
-            $html = '<div class="wpg-channel-wrapper">';
-            $html .= '<iframe 
-                src="https://fast.wistia.com/embed/channel/' . esc_attr($channel_id) . '" 
-                allow="autoplay; fullscreen" 
-                allowfullscreen 
-                frameborder="0"
-                loading="lazy"
-                class="wpg-channel-iframe"
-                title="Wistia Channel">
-            </iframe>';
-            $html .= '</div>';
+            // Prova a ottenere i video del channel tramite API
+            if (!empty($token)) {
+                $api_url = esc_url_raw("https://api.wistia.com/v1/channels/{$channel_id}.json");
+                
+                $response = wp_remote_get(
+                    $api_url,
+                    [
+                        'headers' => [
+                            'Authorization' => 'Bearer ' . sanitize_text_field($token)
+                        ],
+                        'timeout' => 15
+                    ]
+                );
+                
+                if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+                    $body = wp_remote_retrieve_body($response);
+                    $channel_data = json_decode($body, true);
+                    
+                    if (isset($channel_data['medias']) && is_array($channel_data['medias']) && !empty($channel_data['medias'])) {
+                        $medias = $channel_data['medias'];
+                    } elseif (isset($channel_data['media']) && is_array($channel_data['media']) && !empty($channel_data['media'])) {
+                        $medias = $channel_data['media'];
+                    }
+                }
+            }
             
-            return $html;
+            // Se non abbiamo i video, mostra errore
+            if (empty($medias)) {
+                if (current_user_can('manage_options')) {
+                    if (empty($token)) {
+                        return '<p class="wpg-error">Per usare il channel predefinito, configura l\'API Token nelle Impostazioni.</p>';
+                    } else {
+                        return '<p class="wpg-error">Impossibile ottenere i video dal channel predefinito. Verifica le impostazioni.</p>';
+                    }
+                }
+                return '';
+            }
+        } else {
+            if (current_user_can('manage_options')) {
+                return '<p class="wpg-error">Specifica un channel_id o video_ids nello shortcode. Esempi:<br>
+                - [wistia_playlist_gallery channel_id="bkfd9ulu5l"]<br>
+                - [wistia_playlist_gallery video_ids="abc123,def456"]</p>';
+            }
+            return '';
         }
-        
-        if (current_user_can('manage_options')) {
-            return '<p class="wpg-error">Specifica un channel_id o video_ids nello shortcode. Esempi:<br>
-            - [wistia_playlist_gallery channel_id="bkfd9ulu5l"]<br>
-            - [wistia_playlist_gallery video_ids="abc123,def456"]</p>';
-        }
-        return '';
     }
 
     if (empty($medias)) {
@@ -371,30 +498,63 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
         return '';
     }
 
-    $html = '<div class="wpg-gallery">';
+    // Separare il primo video (principale) dagli altri (gallery)
+    $main_video = array_shift($medias);
+    $gallery_videos = $medias;
 
-    foreach ($medias as $media) {
-        if (!isset($media['hashed_id']) || empty($media['hashed_id'])) {
-            continue;
-        }
-
-        $hashed_id = esc_attr($media['hashed_id']);
-        $name = isset($media['name']) ? esc_html($media['name']) : 'Video senza titolo';
-
-        $html .= '<div class="wpg-item">';
-        $html .= '<div class="wpg-video-wrapper">';
+    $html = '<div class="wpg-container">';
+    
+    // Video principale (grande)
+    if (!empty($main_video) && isset($main_video['hashed_id'])) {
+        $main_hashed_id = esc_attr($main_video['hashed_id']);
+        $main_name = isset($main_video['name']) ? esc_html($main_video['name']) : 'Video principale';
+        
+        $html .= '<div class="wpg-main-video">';
+        $html .= '<div class="wpg-main-video-wrapper">';
         $html .= '<iframe 
-            src="https://fast.wistia.net/embed/iframe/' . $hashed_id . '?videoFoam=true" 
+            src="https://fast.wistia.net/embed/iframe/' . $main_hashed_id . '?videoFoam=true" 
             allow="autoplay; fullscreen" 
             allowfullscreen 
             frameborder="0"
             loading="lazy"
-            title="' . esc_attr($name) . '">
+            title="' . esc_attr($main_name) . '">
         </iframe>';
         $html .= '</div>';
-        if (!empty($name)) {
-            $html .= '<p class="wpg-video-title">' . $name . '</p>';
+        if (!empty($main_name)) {
+            $html .= '<p class="wpg-main-video-title">' . $main_name . '</p>';
         }
+        $html .= '</div>';
+    }
+
+    // Gallery di video correlati (se ci sono altri video)
+    if (!empty($gallery_videos)) {
+        $html .= '<div class="wpg-gallery">';
+
+        foreach ($gallery_videos as $media) {
+            if (!isset($media['hashed_id']) || empty($media['hashed_id'])) {
+                continue;
+            }
+
+            $hashed_id = esc_attr($media['hashed_id']);
+            $name = isset($media['name']) ? esc_html($media['name']) : 'Video senza titolo';
+
+            $html .= '<div class="wpg-item">';
+            $html .= '<div class="wpg-video-wrapper">';
+            $html .= '<iframe 
+                src="https://fast.wistia.net/embed/iframe/' . $hashed_id . '?videoFoam=true" 
+                allow="autoplay; fullscreen" 
+                allowfullscreen 
+                frameborder="0"
+                loading="lazy"
+                title="' . esc_attr($name) . '">
+            </iframe>';
+            $html .= '</div>';
+            if (!empty($name)) {
+                $html .= '<p class="wpg-video-title">' . $name . '</p>';
+            }
+            $html .= '</div>';
+        }
+
         $html .= '</div>';
     }
 
