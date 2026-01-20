@@ -319,6 +319,53 @@ add_action('wp_enqueue_scripts', function () {
         '1.0',
         true
     );
+    
+    // Script per la condivisione
+    wp_add_inline_script('wpg-script', '
+        document.addEventListener("DOMContentLoaded", function() {
+            // Gestione pulsanti Condividi puntata
+            document.querySelectorAll(".wpg-share-button").forEach(function(button) {
+                button.addEventListener("click", function() {
+                    const shareUrl = this.getAttribute("data-share-url");
+                    const message = this.nextElementSibling;
+                    
+                    // Copia il link negli appunti
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(shareUrl).then(function() {
+                            showShareMessage(button, message);
+                        }).catch(function() {
+                            fallbackCopy(shareUrl, button, message);
+                        });
+                    } else {
+                        fallbackCopy(shareUrl, button, message);
+                    }
+                });
+            });
+            
+            function showShareMessage(button, message) {
+                message.style.display = "inline-block";
+                setTimeout(function() {
+                    message.style.display = "none";
+                }, 2000);
+            }
+            
+            function fallbackCopy(text, button, message) {
+                const textarea = document.createElement("textarea");
+                textarea.value = text;
+                textarea.style.position = "fixed";
+                textarea.style.opacity = "0";
+                document.body.appendChild(textarea);
+                textarea.select();
+                try {
+                    document.execCommand("copy");
+                    showShareMessage(button, message);
+                } catch (err) {
+                    alert("Link: " + text);
+                }
+                document.body.removeChild(textarea);
+            }
+        });
+    ', 'after');
 });
 
 // === SHORTCODE ===
@@ -339,7 +386,8 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
         if (!empty($token)) {
             // Secondo la documentazione Wistia, usa /medias.json con filtro channel_id
             // Supporta anche paging: per_page (max 100) e page
-            $api_url = esc_url_raw("https://api.wistia.com/v1/medias.json?channel_id={$channel_id}&per_page=100&page=1");
+            // Ordinamento: sort_by=created&sort_direction=0 (dal più nuovo al più vecchio)
+            $api_url = esc_url_raw("https://api.wistia.com/v1/medias.json?channel_id={$channel_id}&per_page=100&page=1&sort_by=created&sort_direction=0");
             
             $response = wp_remote_get(
                 $api_url,
@@ -366,7 +414,7 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
                         if (count($medias_data) === 100) {
                             $page = 2;
                             while (true) {
-                                $next_url = esc_url_raw("https://api.wistia.com/v1/medias.json?channel_id={$channel_id}&per_page=100&page={$page}");
+                                $next_url = esc_url_raw("https://api.wistia.com/v1/medias.json?channel_id={$channel_id}&per_page=100&page={$page}&sort_by=created&sort_direction=0");
                                 $next_response = wp_remote_get(
                                     $next_url,
                                     [
@@ -498,9 +546,43 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
         return '';
     }
 
-    // Separare il primo video (principale) dagli altri (gallery)
-    $main_video = array_shift($medias);
-    $gallery_videos = $medias;
+    // Ordina i video per data (dal più nuovo al più vecchio) se non già ordinati
+    usort($medias, function($a, $b) {
+        $date_a = isset($a['created']) ? strtotime($a['created']) : (isset($a['updated']) ? strtotime($a['updated']) : 0);
+        $date_b = isset($b['created']) ? strtotime($b['created']) : (isset($b['updated']) ? strtotime($b['updated']) : 0);
+        return $date_b - $date_a; // Ordine decrescente (più nuovo prima)
+    });
+
+    // Controlla se c'è un video specifico da mostrare (da URL condiviso)
+    $shared_video_id = isset($_GET['video']) ? sanitize_text_field($_GET['video']) : '';
+    $main_video = null;
+    $gallery_videos = [];
+    
+    if (!empty($shared_video_id)) {
+        // Cerca il video condiviso nella lista
+        $shared_video_index = -1;
+        foreach ($medias as $index => $media) {
+            if (isset($media['hashed_id']) && $media['hashed_id'] === $shared_video_id) {
+                $main_video = $media;
+                $shared_video_index = $index;
+                break;
+            }
+        }
+        
+        if ($main_video) {
+            // Rimuovi il video condiviso dalla lista e aggiungi gli altri alla gallery
+            unset($medias[$shared_video_index]);
+            $gallery_videos = array_values($medias);
+        } else {
+            // Video non trovato, usa il primo della lista
+            $main_video = array_shift($medias);
+            $gallery_videos = $medias;
+        }
+    } else {
+        // Nessun video condiviso, usa il primo della lista
+        $main_video = array_shift($medias);
+        $gallery_videos = $medias;
+    }
 
     $html = '<div class="wpg-container">';
     
@@ -508,6 +590,7 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
     if (!empty($main_video) && isset($main_video['hashed_id'])) {
         $main_hashed_id = esc_attr($main_video['hashed_id']);
         $main_name = isset($main_video['name']) ? esc_html($main_video['name']) : 'Video principale';
+        $main_description = isset($main_video['description']) ? esc_html($main_video['description']) : '';
         
         $html .= '<div class="wpg-main-video">';
         $html .= '<div class="wpg-main-video-wrapper">';
@@ -521,8 +604,21 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
         </iframe>';
         $html .= '</div>';
         if (!empty($main_name)) {
-            $html .= '<p class="wpg-main-video-title">' . $main_name . '</p>';
+            $html .= '<h3 class="wpg-main-video-title">' . $main_name . '</h3>';
         }
+        if (!empty($main_description)) {
+            $html .= '<p class="wpg-main-video-description">' . $main_description . '</p>';
+        }
+        
+        // Pulsante Condividi puntata
+        $share_url = add_query_arg('video', $main_hashed_id, get_permalink());
+        $html .= '<div class="wpg-share-button-wrapper">';
+        $html .= '<button type="button" class="wpg-share-button" data-video-id="' . $main_hashed_id . '" data-share-url="' . esc_url($share_url) . '">';
+        $html .= '<span class="wpg-share-icon">🔗</span> Condividi puntata';
+        $html .= '</button>';
+        $html .= '<span class="wpg-share-message" style="display:none;">Link copiato!</span>';
+        $html .= '</div>';
+        
         $html .= '</div>';
     }
 
@@ -537,6 +633,7 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
 
             $hashed_id = esc_attr($media['hashed_id']);
             $name = isset($media['name']) ? esc_html($media['name']) : 'Video senza titolo';
+            $description = isset($media['description']) ? esc_html($media['description']) : '';
 
             $html .= '<div class="wpg-item">';
             $html .= '<div class="wpg-video-wrapper">';
@@ -550,8 +647,21 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
             </iframe>';
             $html .= '</div>';
             if (!empty($name)) {
-                $html .= '<p class="wpg-video-title">' . $name . '</p>';
+                $html .= '<h4 class="wpg-video-title">' . $name . '</h4>';
             }
+            if (!empty($description)) {
+                $html .= '<p class="wpg-video-description">' . $description . '</p>';
+            }
+            
+            // Pulsante Condividi puntata per ogni video nella gallery
+            $share_url = add_query_arg('video', $hashed_id, get_permalink());
+            $html .= '<div class="wpg-share-button-wrapper">';
+            $html .= '<button type="button" class="wpg-share-button wpg-share-button-small" data-video-id="' . $hashed_id . '" data-share-url="' . esc_url($share_url) . '">';
+            $html .= '<span class="wpg-share-icon">🔗</span> Condividi puntata';
+            $html .= '</button>';
+            $html .= '<span class="wpg-share-message" style="display:none;">Link copiato!</span>';
+            $html .= '</div>';
+            
             $html .= '</div>';
         }
 

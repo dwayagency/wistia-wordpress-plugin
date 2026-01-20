@@ -29,12 +29,20 @@
 }
 
 .wpg-main-video-title {
-    text-align: center;
-    font-size: 18px;
+    text-align: left;
+    font-size: 20px;
     font-weight: 600;
-    margin: 20px;
+    margin: 20px 20px 10px 20px;
     color: #333;
     line-height: 1.4;
+}
+
+.wpg-main-video-description {
+    text-align: left;
+    font-size: 15px;
+    margin: 0 20px 20px 20px;
+    color: #666;
+    line-height: 1.6;
 }
 
 .wpg-gallery {
@@ -78,11 +86,25 @@
 }
 
 .wpg-video-title {
-    text-align: center;
-    font-size: 14px;
-    margin: 12px;
+    text-align: left;
+    font-size: 16px;
+    font-weight: 600;
+    margin: 12px 12px 6px 12px;
     color: #333;
     line-height: 1.4;
+}
+
+.wpg-video-description {
+    text-align: left;
+    font-size: 13px;
+    margin: 0 12px 12px 12px;
+    color: #666;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .wpg-error {
@@ -121,13 +143,32 @@
     }
     
     .wpg-main-video-title {
-        font-size: 16px;
-        margin: 15px;
+        font-size: 18px;
+        margin: 15px 15px 8px 15px;
+    }
+    
+    .wpg-main-video-description {
+        font-size: 14px;
+        margin: 0 15px 15px 15px;
     }
     
     .wpg-gallery {
         grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
         gap: 15px;
+    }
+    
+    .wpg-share-button-wrapper {
+        margin: 12px 15px 15px 15px;
+    }
+    
+    .wpg-share-button {
+        padding: 10px 20px;
+        font-size: 14px;
+    }
+    
+    .wpg-share-button-small {
+        padding: 6px 12px;
+        font-size: 12px;
     }
 }
 
@@ -137,13 +178,41 @@
     }
     
     .wpg-main-video-title {
+        font-size: 16px;
+        margin: 12px 12px 6px 12px;
+    }
+    
+    .wpg-main-video-description {
+        font-size: 13px;
+        margin: 0 12px 12px 12px;
+    }
+    
+    .wpg-video-title {
         font-size: 14px;
-        margin: 12px;
+    }
+    
+    .wpg-video-description {
+        font-size: 12px;
+        -webkit-line-clamp: 2;
     }
     
     .wpg-gallery {
         grid-template-columns: 1fr;
         gap: 15px;
+    }
+    
+    .wpg-share-button-wrapper {
+        margin: 10px 12px 12px 12px;
+    }
+    
+    .wpg-share-button {
+        padding: 10px 18px;
+        font-size: 13px;
+    }
+    
+    .wpg-share-button-small {
+        padding: 6px 10px;
+        font-size: 11px;
     }
 }
 
@@ -156,4 +225,50 @@
     padding: 40px;
     color: #666;
     font-style: italic;
+}
+
+.wpg-share-button-wrapper {
+    margin: 15px 20px 20px 20px;
+    text-align: center;
+}
+
+.wpg-share-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: #dc3545;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.wpg-share-button:hover {
+    background: #c82333;
+    transform: translateY(-1px);
+}
+
+.wpg-share-button:active {
+    transform: translateY(0);
+}
+
+.wpg-share-button-small {
+    padding: 8px 16px;
+    font-size: 13px;
+    margin: 0;
+}
+
+.wpg-share-icon {
+    font-size: 16px;
+}
+
+.wpg-share-message {
+    margin-left: 10px;
+    color: #28a745;
+    font-size: 14px;
+    font-weight: 600;
 }
