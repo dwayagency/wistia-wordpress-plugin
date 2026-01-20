@@ -1,7 +1,7 @@
 <?php
 /*
-Plugin Name: Wistia Playlist Gallery
-Description: Visualizza automaticamente una gallery di video partendo da una playlist Wistia.
+Plugin Name: Wistia Channel Gallery
+Description: Visualizza channel e gallery di video Wistia. Supporta channel, video singoli e gallery personalizzate.
 Version: 1.0
 Author: DWAY Agency
 */
@@ -11,8 +11,8 @@ if (!defined('ABSPATH')) exit;
 // === ADMIN MENU ===
 add_action('admin_menu', function () {
     add_menu_page(
-        'Wistia Playlist Gallery',
-        'Wistia Playlist',
+        'Wistia Channel Gallery',
+        'Wistia Channel',
         'manage_options',
         'wistia-playlist-gallery',
         'wpg_main_page',
@@ -40,12 +40,7 @@ add_action('admin_menu', function () {
 });
 
 add_action('admin_init', function () {
-    register_setting('wpg_settings', 'wpg_api_token', [
-        'type' => 'string',
-        'sanitize_callback' => 'sanitize_text_field',
-        'default' => ''
-    ]);
-    register_setting('wpg_settings', 'wpg_playlist_id', [
+    register_setting('wpg_settings', 'wpg_channel_id', [
         'type' => 'string',
         'sanitize_callback' => 'sanitize_text_field',
         'default' => ''
@@ -61,7 +56,7 @@ function wpg_main_page() {
     $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'settings';
     ?>
     <div class="wrap">
-        <h1>Wistia Playlist Gallery</h1>
+        <h1>Wistia Channel Gallery</h1>
         
         <nav class="nav-tab-wrapper">
             <a href="?page=wistia-playlist-gallery&tab=settings" class="nav-tab <?php echo $active_tab === 'settings' ? 'nav-tab-active' : ''; ?>">
@@ -90,35 +85,21 @@ function wpg_settings_tab() {
         <?php settings_fields('wpg_settings'); ?>
         <table class="form-table">
             <tr>
-                <th scope="row"><label for="wpg_api_token">Wistia API Token</label></th>
+                <th scope="row"><label for="wpg_channel_id">Channel ID Predefinito</label></th>
                 <td>
                     <input 
                         type="text" 
-                        id="wpg_api_token"
-                        name="wpg_api_token" 
-                        value="<?php echo esc_attr(get_option('wpg_api_token')); ?>" 
-                        size="50"
+                        id="wpg_channel_id"
+                        name="wpg_channel_id" 
+                        value="<?php echo esc_attr(get_option('wpg_channel_id')); ?>"
                         class="regular-text"
+                        placeholder="bkfd9ulu5l"
                     >
                     <p class="description">
-                        <strong>Opzionale:</strong> Inserisci il tuo API token di Wistia per recuperare automaticamente i video dalle playlist del <strong>TUO account</strong>. 
-                        Puoi trovarlo nelle impostazioni del tuo account Wistia. 
-                        <br><strong>Nota importante:</strong> L'API token può accedere solo alle playlist del tuo account. 
-                        Per mostrare video/playlist di altri account Wistia, usa l'opzione "Inserisci Manualmente gli ID dei Video" (non richiede API token).
+                        Inserisci il Channel ID Wistia predefinito (es: bkfd9ulu5l dall'URL https://fast.wistia.com/embed/channel/bkfd9ulu5l). 
+                        Questo verrà usato se non specifichi un channel_id nello shortcode.
+                        <br><strong>Nota:</strong> I channel funzionano con qualsiasi account Wistia, non serve API token.
                     </p>
-                </td>
-            </tr>
-            <tr>
-                <th scope="row"><label for="wpg_playlist_id">Playlist ID Predefinita</label></th>
-                <td>
-                    <input 
-                        type="text" 
-                        id="wpg_playlist_id"
-                        name="wpg_playlist_id" 
-                        value="<?php echo esc_attr(get_option('wpg_playlist_id')); ?>"
-                        class="regular-text"
-                    >
-                    <p class="description">Inserisci l'ID della playlist Wistia predefinita (solo il numero, non l'URL completo). Questa verrà usata se non specifichi un playlist_id nello shortcode.</p>
                 </td>
             </tr>
         </table>
@@ -137,101 +118,86 @@ function wpg_generator_page() {
 
 // === GENERATOR TAB ===
 function wpg_generator_tab() {
-    $token = get_option('wpg_api_token');
-    $playlists = [];
-    $selected_playlist_id = isset($_GET['playlist_id']) ? sanitize_text_field($_GET['playlist_id']) : '';
-    $error = '';
-    
-    // Carica le playlist se abbiamo il token
-    if (!empty($token)) {
-        $response = wp_remote_get(
-            'https://api.wistia.com/v1/playlists.json',
-            [
-                'headers' => [
-                    'Authorization' => 'Bearer ' . sanitize_text_field($token)
-                ],
-                'timeout' => 15
-            ]
-        );
-        
-        if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
-            $body = wp_remote_retrieve_body($response);
-            $data = json_decode($body, true);
-            if (is_array($data)) {
-                $playlists = $data;
-            }
-        } elseif (is_wp_error($response)) {
-            $error = $response->get_error_message();
-        }
-    }
     ?>
     <div class="wpg-generator">
-        <h2>Genera Shortcode per Playlist Wistia</h2>
-        
-        <?php if (empty($token)): ?>
-            <div class="notice notice-info">
-                <p>
-                    <strong>Nota:</strong> Non hai configurato l'API Token. 
-                    Puoi comunque generare shortcode inserendo manualmente gli ID dei video (Opzione 2) - funziona con video di qualsiasi account Wistia!
-                    <br><a href="?page=wistia-playlist-gallery&tab=settings">Configura l'API Token</a> solo se vuoi caricare automaticamente le playlist del <strong>tuo account</strong>.
-                </p>
-            </div>
-        <?php endif; ?>
+        <h2>Genera Shortcode per Channel Wistia</h2>
         
         <div style="margin: 20px 0;">
-            <h3>Opzione 1: Usa una Playlist del Tuo Account (richiede API Token)</h3>
+            <h3>Opzione 1: Usa un Channel Wistia (non richiede API Token)</h3>
             <p class="description" style="margin-bottom: 15px;">
-                <strong>Limitazione:</strong> Questa opzione funziona solo con le playlist del tuo account Wistia. 
-                Per mostrare playlist di altri account, usa l'<strong>Opzione 2</strong> (inserimento manuale video IDs).
+                <strong>Funziona con channel di qualsiasi account Wistia!</strong> 
+                Non richiede API token. Inserisci il Channel ID (es: bkfd9ulu5l dall'URL https://fast.wistia.com/embed/channel/bkfd9ulu5l).
             </p>
-            <?php if (!empty($token)): ?>
-            <form method="get" action="" id="wpg-generator-form">
+            
+            <?php
+            $channel_id = isset($_GET['channel_id']) ? sanitize_text_field($_GET['channel_id']) : '';
+            ?>
+            <form method="get" action="" id="wpg-channel-form">
                 <input type="hidden" name="page" value="wistia-playlist-gallery">
                 <input type="hidden" name="tab" value="generator">
                 
                 <table class="form-table">
                     <tr>
-                        <th scope="row"><label for="wpg_select_playlist">Seleziona Playlist</label></th>
+                        <th scope="row"><label for="wpg_channel_id">Channel ID</label></th>
                         <td>
-                            <?php if (!empty($playlists)): ?>
-                                <select id="wpg_select_playlist" name="playlist_id" class="regular-text">
-                                    <option value="">-- Seleziona una playlist --</option>
-                                    <?php foreach ($playlists as $playlist): ?>
-                                        <option value="<?php echo esc_attr($playlist['id']); ?>" 
-                                                <?php selected($selected_playlist_id, $playlist['id']); ?>>
-                                            <?php echo esc_html($playlist['name'] . ' (ID: ' . $playlist['id'] . ')'); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            <?php else: ?>
-                                <input 
-                                    type="text" 
-                                    id="wpg_manual_playlist_id" 
-                                    name="playlist_id" 
-                                    value="<?php echo esc_attr($selected_playlist_id); ?>"
-                                    class="regular-text"
-                                    placeholder="Inserisci Playlist ID"
-                                >
-                                <?php if ($error): ?>
-                                    <p class="description" style="color: #d63638;">
-                                        Errore nel caricamento playlist: <?php echo esc_html($error); ?>. 
-                                        Puoi inserire manualmente l'ID della playlist.
-                                    </p>
-                                <?php else: ?>
-                                    <p class="description">Inserisci l'ID della playlist Wistia (solo il numero).</p>
-                                <?php endif; ?>
-                            <?php endif; ?>
+                            <input 
+                                type="text" 
+                                id="wpg_channel_id" 
+                                name="channel_id" 
+                                value="<?php echo esc_attr($channel_id); ?>"
+                                class="regular-text"
+                                placeholder="bkfd9ulu5l"
+                            >
+                            <p class="description">
+                                Inserisci il Channel ID di Wistia. Puoi trovarlo nell'URL del channel: 
+                                <code>https://fast.wistia.com/embed/channel/bkfd9ulu5l</code> (dove "bkfd9ulu5l" è il Channel ID).
+                                <br><strong>Vantaggio:</strong> Funziona con channel di qualsiasi account Wistia, non solo il tuo!
+                            </p>
                         </td>
                     </tr>
                 </table>
                 
-                <?php submit_button('Genera Shortcode', 'primary', 'generate', false); ?>
+                <?php submit_button('Genera Shortcode', 'primary', 'generate_channel', false); ?>
             </form>
-        <?php else: ?>
-            <p class="description" style="color: #d63638;">
-                Per usare questa opzione, configura l'API Token nelle <a href="?page=wistia-playlist-gallery&tab=settings">Impostazioni</a>.
-            </p>
-        <?php endif; ?>
+            
+            <?php if (!empty($channel_id)): ?>
+                <?php
+                $shortcode_channel = '[wistia_playlist_gallery channel_id="' . esc_attr($channel_id) . '"]';
+                ?>
+                
+                <div class="wpg-shortcode-result" style="margin-top: 30px; padding: 20px; background: #f0f0f1; border-left: 4px solid #2271b1;">
+                    <h3>Shortcode Generato</h3>
+                    <div style="background: #fff; padding: 15px; border: 1px solid #c3c4c7; margin: 15px 0;">
+                        <code id="wpg-shortcode-channel-text" style="font-size: 14px; font-weight: bold; color: #2271b1;">
+                            <?php echo esc_html($shortcode_channel); ?>
+                        </code>
+                        <button type="button" class="button button-secondary" onclick="wpgCopyShortcodeChannel()" style="margin-left: 10px;">
+                            Copia Shortcode
+                        </button>
+                    </div>
+                    <p class="description" style="margin-top: 15px;">
+                        Copia lo shortcode sopra e incollalo nel contenuto della tua pagina o post per visualizzare il channel Wistia.
+                    </p>
+                </div>
+                
+                <script>
+                function wpgCopyShortcodeChannel() {
+                    var shortcode = document.getElementById('wpg-shortcode-channel-text').textContent;
+                    navigator.clipboard.writeText(shortcode).then(function() {
+                        alert('Shortcode copiato negli appunti!');
+                    }, function() {
+                        var textarea = document.createElement('textarea');
+                        textarea.value = shortcode;
+                        document.body.appendChild(textarea);
+                        textarea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textarea);
+                        alert('Shortcode copiato negli appunti!');
+                    });
+                }
+                </script>
+            <?php endif; ?>
+        </div>
         
         <div style="margin: 30px 0; border-top: 1px solid #ddd; padding-top: 20px;">
             <h3>Opzione 2: Inserisci Manualmente gli ID dei Video</h3>
@@ -313,73 +279,6 @@ function wpg_generator_tab() {
                 </script>
             <?php endif; ?>
         </div>
-        
-        <?php if (!empty($token)): ?>
-            
-            <?php if (!empty($selected_playlist_id)): ?>
-                <?php
-                $shortcode = '[wistia_playlist_gallery playlist_id="' . esc_attr($selected_playlist_id) . '"]';
-                $playlist_info = null;
-                
-                // Recupera info playlist
-                $playlist_response = wp_remote_get(
-                    "https://api.wistia.com/v1/playlists/{$selected_playlist_id}.json",
-                    [
-                        'headers' => [
-                            'Authorization' => 'Bearer ' . sanitize_text_field($token)
-                        ],
-                        'timeout' => 15
-                    ]
-                );
-                
-                if (!is_wp_error($playlist_response) && wp_remote_retrieve_response_code($playlist_response) === 200) {
-                    $playlist_body = wp_remote_retrieve_body($playlist_response);
-                    $playlist_info = json_decode($playlist_body, true);
-                }
-                ?>
-                
-                <div class="wpg-shortcode-result" style="margin-top: 30px; padding: 20px; background: #f0f0f1; border-left: 4px solid #2271b1;">
-                    <h3>Shortcode Generato</h3>
-                    <div style="background: #fff; padding: 15px; border: 1px solid #c3c4c7; margin: 15px 0;">
-                        <code id="wpg-shortcode-text" style="font-size: 14px; font-weight: bold; color: #2271b1;">
-                            <?php echo esc_html($shortcode); ?>
-                        </code>
-                        <button type="button" class="button button-secondary" onclick="wpgCopyShortcode()" style="margin-left: 10px;">
-                            Copia Shortcode
-                        </button>
-                    </div>
-                    
-                    <?php if ($playlist_info): ?>
-                        <div style="margin-top: 15px;">
-                            <p><strong>Playlist:</strong> <?php echo esc_html($playlist_info['name'] ?? 'N/A'); ?></p>
-                            <p><strong>Video nella playlist:</strong> <?php echo isset($playlist_info['medias']) ? count($playlist_info['medias']) : 0; ?></p>
-                        </div>
-                    <?php endif; ?>
-                    
-                    <p class="description" style="margin-top: 15px;">
-                        Copia lo shortcode sopra e incollalo nel contenuto della tua pagina o post per visualizzare la gallery della playlist.
-                    </p>
-                </div>
-                
-                <script>
-                function wpgCopyShortcode() {
-                    var shortcode = document.getElementById('wpg-shortcode-text').textContent;
-                    navigator.clipboard.writeText(shortcode).then(function() {
-                        alert('Shortcode copiato negli appunti!');
-                    }, function() {
-                        // Fallback per browser più vecchi
-                        var textarea = document.createElement('textarea');
-                        textarea.value = shortcode;
-                        document.body.appendChild(textarea);
-                        textarea.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(textarea);
-                        alert('Shortcode copiato negli appunti!');
-                    });
-                }
-                </script>
-            <?php endif; ?>
-        <?php endif; ?>
     </div>
     <?php
 }
@@ -395,15 +294,33 @@ add_action('wp_enqueue_scripts', function () {
 // === SHORTCODE ===
 add_shortcode('wistia_playlist_gallery', function ($atts) {
     $atts = shortcode_atts([
-        'playlist_id' => '',
         'video_ids' => '',
+        'channel_id' => '',
     ], $atts);
 
-    $token = get_option('wpg_api_token');
     $medias = [];
 
-    // Opzione 1: Usa video_ids manuali (non richiede API token)
-    if (!empty($atts['video_ids'])) {
+    // Opzione 1: Usa channel_id (non richiede API token, funziona con qualsiasi account)
+    if (!empty($atts['channel_id'])) {
+        $channel_id = sanitize_text_field($atts['channel_id']);
+        
+        // Embed diretto del channel Wistia
+        $html = '<div class="wpg-channel-wrapper">';
+        $html .= '<iframe 
+            src="https://fast.wistia.com/embed/channel/' . esc_attr($channel_id) . '" 
+            allow="autoplay; fullscreen" 
+            allowfullscreen 
+            frameborder="0"
+            loading="lazy"
+            class="wpg-channel-iframe"
+            title="Wistia Channel">
+        </iframe>';
+        $html .= '</div>';
+        
+        return $html;
+    }
+    // Opzione 2: Usa video_ids manuali (non richiede API token)
+    elseif (!empty($atts['video_ids'])) {
         $video_ids = array_map('trim', explode(',', sanitize_text_field($atts['video_ids'])));
         $video_ids = array_filter($video_ids);
         
@@ -418,78 +335,31 @@ add_shortcode('wistia_playlist_gallery', function ($atts) {
                 }
             }
         }
-    }
-    // Opzione 2: Usa playlist_id (richiede API token)
-    elseif (!empty($atts['playlist_id']) || !empty(get_option('wpg_playlist_id'))) {
-        $playlist_id = !empty($atts['playlist_id']) ? sanitize_text_field($atts['playlist_id']) : get_option('wpg_playlist_id');
-        
-        if (empty($token)) {
-            if (current_user_can('manage_options')) {
-                return '<p class="wpg-error">Per usare una playlist, devi configurare l\'API Token nelle Impostazioni. Oppure usa l\'attributo video_ids per inserire manualmente gli ID dei video.</p>';
-            }
-            return '';
-        }
-
-        // Sanitizza il playlist_id per l'URL
-        $playlist_id = sanitize_text_field($playlist_id);
-        $api_url = esc_url_raw("https://api.wistia.com/v1/playlists/{$playlist_id}.json");
-
-        $response = wp_remote_get(
-            $api_url,
-            [
-                'headers' => [
-                    'Authorization' => 'Bearer ' . sanitize_text_field($token)
-                ],
-                'timeout' => 15
-            ]
-        );
-
-        if (is_wp_error($response)) {
-            $error_message = $response->get_error_message();
-            if (current_user_can('manage_options')) {
-                return '<p class="wpg-error">Errore connessione Wistia: ' . esc_html($error_message) . '</p>';
-            }
-            return '';
-        }
-
-        $response_code = wp_remote_retrieve_response_code($response);
-        
-        if ($response_code !== 200) {
-            if (current_user_can('manage_options')) {
-                $error_message = 'Errore API Wistia (codice ' . esc_html($response_code) . ').';
-                if ($response_code === 404) {
-                    $error_message .= ' La playlist non è stata trovata. Verifica che il Playlist ID sia corretto e che la playlist appartenga al tuo account Wistia.';
-                } elseif ($response_code === 403) {
-                    $error_message .= ' Accesso negato. La playlist potrebbe appartenere a un altro account. Per mostrare playlist di altri account, usa l\'attributo video_ids invece di playlist_id.';
-                } else {
-                    $error_message .= ' Verifica che il Playlist ID e l\'API Token siano corretti.';
-                }
-                return '<p class="wpg-error">' . $error_message . '</p>';
-            }
-            return '';
-        }
-
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            if (current_user_can('manage_options')) {
-                return '<p class="wpg-error">Errore nel parsing della risposta Wistia.</p>';
-            }
-            return '';
-        }
-
-        if (!isset($data['medias']) || !is_array($data['medias']) || empty($data['medias'])) {
-            if (current_user_can('manage_options')) {
-                return '<p class="wpg-error">Nessun video trovato nella playlist. Verifica che la playlist contenga dei video.</p>';
-            }
-            return '';
-        }
-
-        $medias = $data['medias'];
     } else {
+        // Usa channel_id predefinito se non specificato
+        $default_channel_id = get_option('wpg_channel_id');
+        if (!empty($default_channel_id)) {
+            $channel_id = sanitize_text_field($default_channel_id);
+            
+            $html = '<div class="wpg-channel-wrapper">';
+            $html .= '<iframe 
+                src="https://fast.wistia.com/embed/channel/' . esc_attr($channel_id) . '" 
+                allow="autoplay; fullscreen" 
+                allowfullscreen 
+                frameborder="0"
+                loading="lazy"
+                class="wpg-channel-iframe"
+                title="Wistia Channel">
+            </iframe>';
+            $html .= '</div>';
+            
+            return $html;
+        }
+        
         if (current_user_can('manage_options')) {
-            return '<p class="wpg-error">Specifica un playlist_id o video_ids nello shortcode. Esempio: [wistia_playlist_gallery video_ids="abc123,def456"]</p>';
+            return '<p class="wpg-error">Specifica un channel_id o video_ids nello shortcode. Esempi:<br>
+            - [wistia_playlist_gallery channel_id="bkfd9ulu5l"]<br>
+            - [wistia_playlist_gallery video_ids="abc123,def456"]</p>';
         }
         return '';
     }
